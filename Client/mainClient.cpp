@@ -8,13 +8,17 @@
 #include <queue>
 #include <map>
 #include <string>
+#include <conio.h>
 
 #define PORT 8820
 #pragma comment(lib, "Ws2_32.lib")
 
 using namespace std;
 
-void handleMessages(SOCKET s);
+void sendMessages(SOCKET s);
+void recieveMessages(SOCKET s);
+
+bool breakAll = false;
 
 void main()
 {
@@ -45,12 +49,13 @@ void main()
 
 	cout << "Socket function succeeded\n" << endl;
 
-	/*cout << "Enter server ip: ";
-	cin >> serverIP;*/
+	cout << "Enter server ip: ";
+	cin >> serverIP;
 
 	// Configuration of the socket
 	clientService.sin_family = AF_INET;
 	clientService.sin_addr.s_addr = inet_addr("127.0.0.1");
+	clientService.sin_addr.s_addr = inet_addr(serverIP.c_str());
 	clientService.sin_port = htons(PORT);
 
 	// Connection request
@@ -68,28 +73,62 @@ void main()
 
 	cout << "Acquired connection with " << serverIP << endl;
 
-	thread(handleMessages, s).join();
+	thread(sendMessages, s).detach();
+	thread(recieveMessages, s).detach();
 
+	while (!breakAll);
 	system("pause");
 }
 
-void handleMessages(SOCKET s)
+void sendMessages(SOCKET s)
+{
+	char msg[1024] = { '/0' };
+	int i = 0;
+
+	while (true)
+	{
+		char c = _getch();
+
+		// if clicked escape, then delete the last character
+		if (c == 27)
+			msg[strlen(msg) - 1] = '\0';
+
+		// if the user pressed enter
+		if (c == 13)
+		{
+			// print it
+			msg[i] = '\0';
+			cout << "You: " << msg << endl;
+			i = 0;
+
+			// send it
+			if (send(s, msg, 1024, 0) == INVALID_SOCKET)
+			{
+				cout << "ERROR: INVALID SOCKET!" << endl;
+				closesocket(s);
+
+				break;
+			}
+
+			if (msg[0] == 'e' && msg[1] == 'n' && msg[2] == 'd')
+			{
+				this_thread::sleep_for(chrono::milliseconds(200));
+
+				closesocket(s);
+				exit(0);
+			}
+		}
+		else
+			msg[i++] = c;
+	}
+}
+
+void recieveMessages(SOCKET s)
 {
 	char msg[1024] = { '/0' };
 
 	while (true)
 	{
-		cout << ">> ";
-		cin >> msg;
-
-		if (send(s, msg, 1024, 0) == INVALID_SOCKET)
-		{
-			cout << "ERROR: INVALID SOCKET!" << endl;
-			closesocket(s);
-
-			break;
-		}
-
 		if (recv(s, msg, 1024, 0) == INVALID_SOCKET)
 		{
 			cout << "ERROR: INVALID SOCKET!" << endl;
@@ -98,6 +137,6 @@ void handleMessages(SOCKET s)
 			break;
 		}
 
-		cout << "SOCKET " << s << ": " << msg << endl;
+		cout << msg << endl;
 	}
 }

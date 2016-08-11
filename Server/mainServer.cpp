@@ -42,7 +42,7 @@ void bindAndListen()
 	WSADATA wsa;
 	struct sockaddr_in server;
 
-	cout << "\nInitialising Winsock...\n";
+	cout << "Initialising Winsock...\n";
 
 	if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0)
 	{
@@ -88,15 +88,13 @@ void bindAndListen()
 
 void acceptClient()
 {
-	SOCKET new_socket;
-	struct sockaddr_in client;
-	int c = sizeof(struct sockaddr_in);
-
 	// accepting new clients
 	while (true)
 	{
 		// creating their individual socket
-		new_socket = ::accept(_socket, (struct sockaddr *)&client, &c);
+		struct sockaddr_in client;
+		int c = sizeof(struct sockaddr_in);
+		SOCKET new_socket = ::accept(_socket, (struct sockaddr *)&client, &c);
 
 		if (new_socket == INVALID_SOCKET)
 		{
@@ -106,7 +104,6 @@ void acceptClient()
 			return;
 		}
 
-		cout << "new socket: " << new_socket << endl;
 		_connectedClients.push_back(new_socket);
 		thread(clientHandler, new_socket).detach();
 
@@ -127,12 +124,36 @@ void clientHandler(SOCKET s)
 
 			if (res == INVALID_SOCKET)
 			{
+				cout << "in the recv error if" << endl;
+
 				string errMsg = "Error while receiving from socket: ";
 				errMsg.append(to_string(s));
 
 				cout << errMsg << endl;
 				cout << "last error: " << WSAGetLastError() << endl;
 				closesocket(s);
+				return;
+			}
+
+			// if sent "end" ending the conversation
+			if (recvMsg[0] == 'e' && recvMsg[1] == 'n' && recvMsg[2] == 'd')
+			{
+				cout << "Client " << s << " left the chat" << endl;
+
+				// removing from the users vector
+				for (int i = 0; i < _connectedClients.size(); i++)
+				{
+					if (s == _connectedClients.at(i))
+					{
+						_connectedClients.erase(_connectedClients.begin() + i);
+						break;
+					}
+				}
+
+				// closing the socket
+				closesocket(s);
+				this_thread::sleep_for(chrono::milliseconds(200));
+
 				return;
 			}
 
@@ -149,6 +170,8 @@ void clientHandler(SOCKET s)
 
 void handleRecievedMessages()
 {
+	string str;
+
 	while (true)
 	{
 		// waiting until there is a new message
@@ -162,13 +185,31 @@ void handleRecievedMessages()
 			RecievedMessage* message = _queRcvMessages.front();
 			_queRcvMessages.pop();
 
-			if (send(message->getSock(), message->getMsg(), 1024, 0) == INVALID_SOCKET)
-			{
-				cout << "ERROR: INVALID SOCKET!" << endl;
-				closesocket(message->getSock());
+			str.append("Client ");
+			str.append(to_string(message->getSock()));
+			str.append(": ");
+			str.append(message->getMsg());
 
-				break;
+			cout << str << endl;
+
+			// sending the message to all except the one who sent the message
+			for (int i = 0; i < _connectedClients.size(); i++)
+			{
+				// if it is not the one who sent the message
+				if (_connectedClients.at(i) != message->getSock())
+				{
+					// sending the message to the client in the current iteration
+					if (send(_connectedClients.at(i), str.c_str(), 1024, 0) == INVALID_SOCKET)
+					{
+						cout << "ERROR: INVALID SOCKET!" << endl;
+						closesocket(message->getSock());
+
+						break;
+					}
+				}
 			}
+
+			str.clear();
 		}
 
 		lck.unlock();
